@@ -15,5 +15,23 @@ model User {
   updated_at DateTime  @updatedAt
   deleted_at DateTime?
 
+  auth_identities AuthIdentity[]
+
   @@index([deleted_at])
+}
+
+model AuthIdentity {
+  id            Int       @id @default(autoincrement())
+  identity_id   String
+  user_id       Int
+  provider      String
+  password_hash String?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+  deleted_at    DateTime?
+  user          User      @relation(fields: [user_id], references: [id], onDelete: Restrict)
+
+  @@unique([provider, identity_id])
+  @@unique([user_id, provider])
+  @@map("auth_identity")
 }
