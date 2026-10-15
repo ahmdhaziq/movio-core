@@ -69,8 +69,8 @@ Public endpoints are `GET /user/list?page=1&perPage=10` (maximum `perPage=50`)
 and `GET /user/:id`. They return only `id`, `name`, and `created_at` for active
 users; an empty page or missing profile returns 404. Invalid parameters return 400.
 Creation, partial updates, and soft deletion are internal `UserService` methods.
-There is no registration/create, update, or delete HTTP endpoint yet; authentication
-and ownership checks belong to a later auth module.
+There is no user-module create, update, or delete HTTP endpoint. Registration is
+provided by the auth module below; sign-in and ownership guards remain future work.
 
 ## Compile and run the project
 
@@ -170,3 +170,63 @@ Nest is an MIT-licensed open source project. It can grow thanks to the sponsors 
 ## License
 
 Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+
+## Local user registration
+
+`POST /auth/register` is public and accepts only these fields:
+
+```json
+{
+  "provider": "local",
+  "name": "Ada",
+  "email": "ada@example.com",
+  "password": "SyntheticPass9!"
+}
+```
+
+Success is HTTP 201 with `{ "user": { "id": 1, "name": "Ada", "email": "ada@example.com" } }`.
+No identity/hash is returned and no session, cookie, or sign-in token is created.
+Only local is enabled; Google/Microsoft enum values reserve names for future work.
+
+Name is trimmed, nonblank, and at most 100 characters. Email is trimmed/lowercased
+and must be valid. Password is preserved exactly and requires 8–128 Unicode code
+points, uppercase/lowercase letters, an ASCII digit, and a non-letter/non-number/
+non-whitespace symbol. Unknown fields and missing/null/non-text required fields
+are rejected. Validation runs at the controller pipe; AuthService and
+UserService.create accept already validated input. Other internal callers must
+validate at their entry boundary. UserService still enforces canonical email
+normalization and uniqueness as business/data invariants.
+
+The endpoint returns sanitized field errors (400), unavailable email/identity
+(409), rate limiting (429 with Retry-After seconds), recognized temporary resource
+or storage failure (503), or unexpected/configuration error (500). Existing emails
+remain unavailable even for deleted users or users without a local identity;
+registration does not link or restore accounts. See
+[the endpoint contract](specs/002-user-registration/contracts/auth-registration.md)
+and [failure classification](specs/002-user-registration/plan.md#failure-classification).
+
+Before starting the API, run `npx prisma generate` and `npx prisma migrate deploy`
+with your configured database URL. The reviewed migrations add auth_identity and
+normalize retained emails. The normalization migration locks the User table and
+aborts on case/whitespace collisions; resolve those deliberately and follow Prisma's
+failed-migration recovery procedure before retrying. It never merges/deletes users
+or invents credentials for retained accounts. Test upgrades against a backup before
+applying to a populated deployment.
+
+AuthService keeps register(), private resolveStrategy(), and private hashPassword()
+in one file. AuthRepository.withTransaction() is a thin Prisma transaction wrapper:
+UserService.create and LocalStrategy.register receive the same transaction client,
+so a failed identity write rolls back the new user. Argon2id hashing runs before
+the transaction, using 19456 KiB memory, two iterations, and parallelism one.
+
+The endpoint allows ten attempts per rolling 60-second window per client IP,
+including successful and rejected attempts. Other user routes are unaffected.
+The limiter uses in-memory storage for one application instance. Configure shared
+storage before deploying replicas. Forwarded IP headers are not trusted by default;
+only configure Express trusted proxies for a known deployment proxy boundary.
+Passwords, encoded hashes, emails, and request bodies are excluded from outcome logs.
+
+Run `npm test` and `npm run test:e2e` with PostgreSQL available. Tests create and
+remove isolated schemas; they never reset application tables. The registration
+E2E suite checks rollback, duplicate races, credential confidentiality, limiter
+expiry, and 20 concurrent registrations with real hashing and distinct test IPs.

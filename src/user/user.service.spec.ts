@@ -11,6 +11,7 @@ const prismaError = (code: string) =>
   new Prisma.PrismaClientKnownRequestError('test', {
     code,
     clientVersion: '6',
+    meta: code === 'P2002' ? { target: ['email'] } : undefined,
   });
 describe('UserService', () => {
   const repository = {
@@ -55,10 +56,7 @@ describe('UserService', () => {
     repository.softDelete.mockResolvedValue(null);
     await expect(service.delete(1)).rejects.toBeInstanceOf(NotFoundException);
   });
-  it('validates internal create/update inputs before touching persistence', async () => {
-    await expect(
-      service.create({ name: 'a'.repeat(101), email: 'bad' }),
-    ).rejects.toBeInstanceOf(BadRequestException);
+  it('validates existing update inputs before touching persistence', async () => {
     await expect(service.update(1, {})).rejects.toBeInstanceOf(
       BadRequestException,
     );
@@ -153,5 +151,34 @@ describe('UserService', () => {
     const error = new Error('offline');
     repository.create.mockRejectedValue(error);
     await expect(service.create(input)).rejects.toBe(error);
+  });
+});
+
+describe('UserService transaction context', () => {
+  it('forwards tx for lookup and creation and normalizes email', async () => {
+    const repository = {
+      getUser: vi.fn().mockResolvedValue(null),
+      create: vi.fn().mockResolvedValue({ id: 1 }),
+    };
+    const tx = {} as Prisma.TransactionClient;
+    const service = new UserService(repository as unknown as UserRepository);
+    await service.create({ name: ' Ada ', email: ' ADA@EXAMPLE.COM ' }, tx);
+    expect(repository.getUser).toHaveBeenCalledWith(
+      { email: 'ada@example.com' },
+      tx,
+    );
+    expect(repository.create).toHaveBeenCalledWith(
+      { name: 'Ada', email: 'ada@example.com' },
+      tx,
+    );
+  });
+  it('normalizes an updated email before persistence', async () => {
+    const repository = { update: vi.fn().mockResolvedValue({ id: 1 }) };
+    const service = new UserService(repository as unknown as UserRepository);
+    await service.update(1, { email: 'ADA@EXAMPLE.COM' });
+    expect(repository.update).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ email: 'ada@example.com' }),
+    );
   });
 });

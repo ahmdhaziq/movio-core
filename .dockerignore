@@ -5,3 +5,5 @@ build/
 *.log*
 .env*
 coverage/
+Dockerfile*
+.dockerignore

@@ -45,12 +45,12 @@ export class UserRepository {
     });
   }
 
-  getUser(where: Prisma.UserWhereUniqueInput) {
-    return this.prisma.user.findUnique({ where });
+  getUser(where: Prisma.UserWhereUniqueInput, tx?: Prisma.TransactionClient) {
+    return (tx ?? this.prisma).user.findUnique({ where });
   }
 
-  create(dto: CreateUserDto) {
-    return this.prisma.user.create({
+  create(dto: CreateUserDto, tx?: Prisma.TransactionClient) {
+    return (tx ?? this.prisma).user.create({
       data: { name: dto.name, email: dto.email },
     });
   }

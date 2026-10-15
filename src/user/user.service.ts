@@ -46,6 +46,7 @@ export class UserService {
 
   async update(id: number, query: UpdateUserDto) {
     const dto = await this.validateDto(UpdateUserDto, query);
+    if (dto.email !== undefined) dto.email = dto.email.trim().toLowerCase();
     try {
       const user = await this.repository.update(id, dto);
       if (!user) throw new NotFoundException('User not found');
@@ -78,17 +79,26 @@ export class UserService {
     return user;
   }
 
-  getUser(where: Prisma.UserWhereUniqueInput) {
-    return this.repository.getUser(where);
+  getUser(where: Prisma.UserWhereUniqueInput, tx?: Prisma.TransactionClient) {
+    return tx
+      ? this.repository.getUser(where, tx)
+      : this.repository.getUser(where);
   }
 
-  async create(dto: CreateUserDto) {
-    dto = await this.validateDto(CreateUserDto, dto);
-    if (await this.getUser({ email: dto.email })) {
+  getUserByEmail(email: string, tx?: Prisma.TransactionClient) {
+    const where = { email: email.trim().toLowerCase() };
+    return tx ? this.getUser(where, tx) : this.getUser(where);
+  }
+
+  async create(dto: CreateUserDto, tx?: Prisma.TransactionClient) {
+    dto = { name: dto.name.trim(), email: dto.email.trim().toLowerCase() };
+    if (await this.getUserByEmail(dto.email, tx)) {
       throw new ConflictException('Email is already in use');
     }
     try {
-      return await this.repository.create(dto);
+      return await (tx
+        ? this.repository.create(dto, tx)
+        : this.repository.create(dto));
     } catch (error) {
       this.translateError(error);
     }
@@ -96,7 +106,13 @@ export class UserService {
 
   private translateError(error: unknown): never {
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      if (error.code === 'P2002')
+      if (
+        error.code === 'P2002' &&
+        (JSON.stringify(error.meta?.target) === '["email"]' ||
+          ['User_email_key', 'User_email_normalized_key'].includes(
+            String(error.meta?.target),
+          ))
+      )
         throw new ConflictException('Email is already in use');
       if (error.code === 'P2025') throw new NotFoundException('User not found');
     }
