@@ -65,24 +65,25 @@ dependencies, then apply migrations before starting the API.
 
 ### User module
 
-Public endpoints are `GET /user/list?page=1&perPage=10` (maximum `perPage=50`)
+Guarded endpoints are `GET /user/list?page=1&perPage=10` (maximum `perPage=50`)
 and `GET /user/:id`. They return only `id`, `name`, and `created_at` for active
 users; an empty page or missing profile returns 404. Invalid parameters return 400.
 Creation, partial updates, and soft deletion are internal `UserService` methods.
 There is no user-module create, update, or delete HTTP endpoint. Registration is
-provided by the auth module below; sign-in and ownership guards remain future work.
+provided by the auth module below. User reads require an access bearer token;
+role and ownership authorization remain future work.
 
 ## Compile and run the project
 
 ```bash
 # development
-$ npm run start
+node --env-file=.env node_modules/@nestjs/cli/bin/nest.js start
 
 # watch mode
-$ npm run start:dev
+node --env-file=.env node_modules/@nestjs/cli/bin/nest.js start --watch
 
 # production mode
-$ npm run start:prod
+node --env-file=.env dist/main.js
 ```
 
 ## Run tests
@@ -230,3 +231,80 @@ Run `npm test` and `npm run test:e2e` with PostgreSQL available. Tests create an
 remove isolated schemas; they never reset application tables. The registration
 E2E suite checks rollback, duplicate races, credential confidentiality, limiter
 expiry, and 20 concurrent registrations with real hashing and distinct test IPs.
+
+## Authentication and guarded routes
+
+Use Node 26+ (or a supported Node 24 LTS release at least 24.15), npm and PostgreSQL 17.
+Copy `.env.example` to `.env` and set `AUTH_ACCESS_SECRET` and
+`AUTH_REFRESH_SECRET` to **different** base64 keys. Generate each independently
+with `openssl rand -base64 32`. Keys must decode to at least 32 bytes; missing,
+malformed, short or identical keys prevent startup. Never commit `.env`.
+
+```bash
+npm ci
+# After configuring .env:
+docker compose up -d --wait postgres
+npx prisma generate
+npx prisma migrate deploy
+npm run build
+node --env-file=.env dist/main.js
+```
+
+If port 5432 is occupied, set `POSTGRES_PORT` and the port in `DATABASE_URL`
+together. Tests can use `TEST_DATABASE_URL` for a separate PostgreSQL endpoint.
+They create and remove isolated schemas and never reset application tables.
+
+| Endpoint | Request | Behavior |
+|---|---|---|
+| `POST /auth/login` | `{ "provider": "local", "email": "ada@example.com", "password": "SyntheticPass9!" }` | 200 safe user plus access/refresh JWTs and UTC expiry times |
+| `GET /user/list`, `GET /user/:id` | `Authorization: Bearer <access_token>` | Existing profile results; missing/invalid access returns 401 |
+| `POST /auth/refresh` | `{ "refresh_token": "<current refresh token>" }` | 200 replacement pair with unchanged renewal deadline |
+| `POST /auth/logout` | `{ "token_type": "access", "token": "<access token>" }` or refresh equivalent | 200 `{ "message": "Signed out" }` after family revocation |
+
+Business routes require access authentication by default. Only registration,
+login and the existing root health/greeting are public. Refresh and logout
+validate body credentials themselves. Registration still returns only a user
+and does not log in automatically. All auth responses use `Cache-Control: no-store`.
+
+Access lasts one hour and is verified without database calls. Renewal ends at a
+fixed deadline 30 elapsed days after login; activity never extends it. Renewal
+near that deadline caps access to the remaining time. Logout, account deletion
+and refresh reuse stop renewal; issued access remains valid until its signed
+expiry. Separate logins have independent families. Existing business eligibility
+checks still apply to authenticated callers.
+
+Mobile clients should securely store credentials, replace both tokens on refresh,
+**serialize refresh requests**, and clear stored credentials on logout. Do not
+automatically retry refresh after a lost response: using a consumed token revokes
+renewal for that login, including an already issued replacement. A fresh login
+is then required. Send credentials over HTTPS in production, never in URLs.
+
+Login and refresh each allow ten attempts per 60 seconds per trusted client IP,
+counting validation failures and successes independently. Registration retains
+its own limit; logout and ordinary guarded requests do not consume these buckets.
+The limiter is in memory for one instance. Configure shared storage before
+replicas. Forwarded IPs are not trusted by default; configure only known ingress
+proxies at the deployment boundary. Outcome logs exclude emails, passwords,
+tokens, digests and internal diagnostics, and include a request correlation ID
+also returned as `X-Request-Id`.
+
+The additive Prisma migration creates `refresh_token`, storing SHA-256 digests,
+ownership and rotation history. Retain roots and consumed generations through the
+fixed deadline. There is no cleanup job in this increment; a future purge must
+remove descendants before roots. Apply reviewed migrations without resetting
+existing users or identities.
+
+Only local authentication is enabled. Adding a provider requires its own concrete
+request DTO, matching provider-keyed request/credential map and registry entry,
+and implemented strategy. Reserved enum values alone do not enable a provider.
+Roles, admin operations, social login, password recovery and client UI are outside
+this increment. See the [API contract](specs/003-user-auth/contracts/authentication-api.md),
+[quickstart](specs/003-user-auth/quickstart.md) and
+[validation evidence](specs/003-user-auth/validation.md).
+
+```bash
+npm run build
+npm run lint
+npm test
+npm run test:e2e
+```

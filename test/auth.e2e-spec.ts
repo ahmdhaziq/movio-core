@@ -1,3 +1,5 @@
+import { useAuthTestEnvironment } from '../src/auth/testing/auth-test-config.js';
+useAuthTestEnvironment();
 import { Logger } from '@nestjs/common';
 import { cpus, platform, arch } from 'node:os';
 import { Prisma } from '@prisma/client';
@@ -55,10 +57,16 @@ describe('Local registration (e2e)', () => {
   beforeEach(async () => {
     client++;
     vi.restoreAllMocks();
+    await db.prisma.refreshToken.deleteMany({
+      where: {
+        NOT: { id: { equals: db.prisma.refreshToken.fields.root_token_id } },
+      },
+    });
+    await db.prisma.refreshToken.deleteMany();
     await db.prisma.authIdentity.deleteMany();
     await db.prisma.user.deleteMany();
   });
-  const post = (body: unknown) =>
+  const post = (body: object) =>
     request(app.getHttpServer()).post('/auth/register').send(body);
   it('commits a user and salted local identity without signing in or exposing credentials', async () => {
     const response = await post({
@@ -82,8 +90,19 @@ describe('Local registration (e2e)', () => {
     await post({ ...valid, email: 'second@example.com' }).expect(201);
     const identities = await db.prisma.authIdentity.findMany();
     expect(identities[0].password_hash).not.toBe(identities[1].password_hash);
+    const access = (
+      await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({
+          provider: valid.provider,
+          email: valid.email,
+          password: valid.password,
+        })
+        .expect(200)
+    ).body.access_token;
     const profile = await request(app.getHttpServer())
       .get(`/user/${response.body.user.id}`)
+      .set('Authorization', `Bearer ${access}`)
       .expect(200);
     expect(Object.keys(profile.body).sort()).toEqual([
       'created_at',
@@ -92,6 +111,7 @@ describe('Local registration (e2e)', () => {
     ]);
     const list = await request(app.getHttpServer())
       .get('/user/list')
+      .set('Authorization', `Bearer ${access}`)
       .expect(200);
     expect(JSON.stringify(list.body)).not.toContain('password');
     expect(await db.prisma.user.count()).toBe(2);
@@ -217,7 +237,20 @@ describe('Local registration (e2e)', () => {
     expect(Number(response.headers['retry-after'])).toBeGreaterThan(0);
     expect(await db.prisma.user.count()).toBe(1);
     expect(await db.prisma.authIdentity.count()).toBe(1);
-    await request(app.getHttpServer()).get('/user/list').expect(200);
+    const access = (
+      await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({
+          provider: valid.provider,
+          email: valid.email,
+          password: valid.password,
+        })
+        .expect(200)
+    ).body.access_token;
+    await request(app.getHttpServer())
+      .get('/user/list')
+      .set('Authorization', `Bearer ${access}`)
+      .expect(200);
     // Advance the limiter's wall clock without replacing HTTP/database timers.
     const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 61_000);
     try {

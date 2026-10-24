@@ -1,3 +1,5 @@
+import { useAuthTestEnvironment } from './testing/auth-test-config.js';
+useAuthTestEnvironment();
 import { Logger } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { Test } from '@nestjs/testing';
@@ -30,11 +32,9 @@ describe('Registration controller validation', () => {
   });
   afterAll(() => app.close());
   beforeEach(() => {
-    service.register
-      .mockReset()
-      .mockResolvedValue({
-        user: { id: 1, name: 'Ada', email: 'ada@example.com' },
-      });
+    service.register.mockReset().mockResolvedValue({
+      user: { id: 1, name: 'Ada', email: 'ada@example.com' },
+    });
   });
   it.each([
     ['name', undefined],

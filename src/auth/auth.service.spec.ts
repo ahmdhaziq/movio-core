@@ -1,3 +1,5 @@
+import { AuthTokenService } from './auth-token.service.js';
+import { TestAuthClock } from './testing/auth-test-config.js';
 import {
   BadRequestException,
   ConflictException,
@@ -13,7 +15,7 @@ import { LocalStrategy } from './strategies/local.strategies.js';
 import { AuthProvider } from './enums/auth-provider.enum.js';
 vi.mock('argon2', () => ({ hash: vi.fn(), argon2id: 2 }));
 const dto = {
-  provider: AuthProvider.Local,
+  provider: AuthProvider.Local as const,
   name: 'Ada',
   email: 'ada@example.com',
   password: 'ExamplePass9!',
@@ -23,7 +25,7 @@ describe('AuthService', () => {
   const tx = {} as Prisma.TransactionClient;
   const repository = { withTransaction: vi.fn(), getIdentityByUserId: vi.fn() };
   const users = { getUserByEmail: vi.fn(), create: vi.fn() };
-  const local = { provider: AuthProvider.Local, register: vi.fn() };
+  const local = { provider: AuthProvider.Local as const, register: vi.fn() };
   let service: AuthService;
   beforeEach(() => {
     vi.resetAllMocks();
@@ -38,6 +40,8 @@ describe('AuthService', () => {
       repository as unknown as AuthRepository,
       users as unknown as UserService,
       local as unknown as LocalStrategy,
+      {} as AuthTokenService,
+      new TestAuthClock(),
     );
   });
   afterEach(() => vi.restoreAllMocks());

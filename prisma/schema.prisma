@@ -16,6 +16,7 @@ model User {
   deleted_at DateTime?
 
   auth_identities AuthIdentity[]
+  refresh_tokens  RefreshToken[]
 
   @@index([deleted_at])
 }
@@ -31,7 +32,33 @@ model AuthIdentity {
   deleted_at    DateTime?
   user          User      @relation(fields: [user_id], references: [id], onDelete: Restrict)
 
+  refresh_tokens RefreshToken[] @relation("RefreshOwner")
+
+  @@unique([id, user_id])
   @@unique([provider, identity_id])
   @@unique([user_id, provider])
   @@map("auth_identity")
+}
+
+model RefreshToken {
+  id               String         @id @db.Uuid
+  user_id          Int
+  auth_identity_id Int
+  root_token_id    String         @db.Uuid
+  token_hash       String         @unique @db.Char(64)
+  expired_at       DateTime       @db.Timestamptz(3)
+  consumed_at      DateTime?      @db.Timestamptz(3)
+  revoked_at       DateTime?      @db.Timestamptz(3)
+  created_at       DateTime       @db.Timestamptz(3)
+  user             User           @relation(fields: [user_id], references: [id], onDelete: Restrict)
+  auth_identity    AuthIdentity   @relation("RefreshOwner", fields: [auth_identity_id, user_id], references: [id, user_id], onDelete: Restrict)
+  root             RefreshToken   @relation("RefreshFamily", fields: [root_token_id, user_id, auth_identity_id], references: [id, user_id, auth_identity_id], onDelete: Restrict, onUpdate: NoAction)
+  generations      RefreshToken[] @relation("RefreshFamily")
+
+  @@unique([id, user_id, auth_identity_id])
+  @@index([user_id])
+  @@index([auth_identity_id])
+  @@index([root_token_id])
+  @@index([expired_at])
+  @@map("refresh_token")
 }

@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { AUTH_MODE } from '../auth/decorators/auth-mode.decorator.js';
 import { ValidationPipe } from '@nestjs/common';
 import { PATH_METADATA, METHOD_METADATA } from '@nestjs/common/constants.js';
 import { RequestMethod } from '@nestjs/common';
@@ -16,7 +17,7 @@ describe('UserController', () => {
   });
   const parse = (value: object) =>
     pipe.transform(value, { type: 'query', metatype: ListUsersQueryDto });
-  it('declares only public GET list and profile routes', () => {
+  it('declares GET list and profile routes without public authentication exemptions', () => {
     expect(Reflect.getMetadata(PATH_METADATA, UserController)).toBe('user');
     // Route metadata belongs to the unbound method, not a bound copy.
     for (const [method, path] of [
@@ -25,6 +26,7 @@ describe('UserController', () => {
       // oxlint-disable-next-line typescript/unbound-method
       [controller.getUserById, ':id'],
     ] as const) {
+      expect(Reflect.getMetadata(AUTH_MODE, method)).toBeUndefined();
       expect(Reflect.getMetadata(PATH_METADATA, method)).toBe(path);
       expect(Reflect.getMetadata(METHOD_METADATA, method)).toBe(
         RequestMethod.GET,

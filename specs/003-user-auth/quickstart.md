@@ -1,12 +1,12 @@
 # Validation Guide: Stateless Authentication
 
-This guide applies after implementation. Planning does not install dependencies, add production endpoints or apply migrations.
+The implemented flow uses stateless access JWTs and stored refresh rotation. See [validation.md](validation.md) for executed checks and measurements.
 
 ## Prerequisites and commands
 
-Node 24+ supported by project dependencies, npm, Docker Compose/PostgreSQL 17; DATABASE_URL configured as in .env.example. TEST_DATABASE_URL uses a test role allowed to create/drop isolated schemas. Configure independently generated AUTH_ACCESS_SECRET/AUTH_REFRESH_SECRET base64 keys, each >=32 decoded random bytes. Never commit keys; implementation documents variables and provides explicit test-only configuration. Single application instance initially; shared throttler storage before replicas. HTTPS at production ingress.
+Node 26+ or a supported Node 24 LTS release >=24.15, npm, Docker Compose/PostgreSQL 17; DATABASE_URL configured as in .env.example. TEST_DATABASE_URL uses a test role allowed to create/drop isolated schemas. Configure independently generated AUTH_ACCESS_SECRET/AUTH_REFRESH_SECRET base64 keys, each >=32 decoded random bytes. Never commit keys; implementation documents variables and provides explicit test-only configuration. Single application instance initially; shared throttler storage before replicas. HTTPS at production ingress.
 
-From repository root after dependencies/migration are implemented:
+From repository root, copy `.env.example` to `.env`, configure the database and set two independently generated secrets (`openssl rand -base64 32` per key). Then:
 
 ```bash
 npm ci
@@ -17,7 +17,7 @@ npm run build
 npm run lint
 npm test
 npm run test:e2e
-npm run start:dev
+node --env-file=.env dist/main.js
 ```
 
 Expected: build/lint/tests pass; suites create/drop only their own schemas through testDatabase. No resetting developer data. Review [API contract](contracts/authentication-api.md), [verification paths](contracts/auth-internal.md) and [data model](data-model.md).
@@ -51,8 +51,47 @@ Advance injected AuthClock in token-boundary tests; verifyAsync receives the cur
 
 With auth persistence unavailable, a test-only guarded action that needs no DB must still accept valid access. Do not claim actual DB-backed business reads succeed during database outage. Invalid access always denies before the action. There is no auth-session table or live-state authentication check to satisfy.
 
-Update existing auth/user E2E fixtures to login before guarded reads while preserving token-free registration. Delete nonroot refresh descendants, then self-referencing roots, then identities/users in fixture teardown. Do not bypass throttling globally for performance tests; use distinct trusted IPs. No test success is claimed by this planning guide.
+Update existing auth/user E2E fixtures to login before guarded reads while preserving token-free registration. Delete nonroot refresh descendants, then self-referencing roots, then identities/users in fixture teardown. Do not bypass throttling globally for performance tests; use distinct trusted IPs. Executed results are recorded separately in validation.md.
 
 Error and filter unit/contract tests belong beside their subjects under `src/auth/exceptions/`; the existing `src/**/*.spec.ts` test discovery includes them. Keep cross-domain E2E tests under `test/`.
 
 Review type-level provider/payload correlation and registry consistency. A test-only alternative provider DTO/strategy can prove selection does not require local email/password; keep this fixture isolated from the production registry and do not enable a real external provider or skip local validation.
+
+
+## HTTP examples
+
+Register with the existing registration endpoint, then use an HTTP client with private token variables:
+
+```http
+POST /auth/login
+Content-Type: application/json
+
+{"provider":"local","email":"ada@example.com","password":"SyntheticPass9!"}
+```
+
+Save `access_token` and `refresh_token` from the 200 result. Use the access token
+for `GET /user/list` with `Authorization: Bearer <access_token>`.
+
+```http
+POST /auth/refresh
+Content-Type: application/json
+
+{"refresh_token":"<current refresh_token>"}
+```
+
+Replace both local tokens with the response. The refresh deadline stays unchanged.
+Serialize refresh requests and avoid automatic retries of a consumed credential.
+
+```http
+POST /auth/logout
+Content-Type: application/json
+
+{"token_type":"refresh","token":"<current refresh_token>"}
+```
+
+Clear both local tokens after success. Logout stops renewal; issued access remains
+accepted until expiry. Retain refresh roots/history through the original deadline.
+The first increment uses a single-instance in-memory limiter; shared storage is
+required before replicas. Trust forwarded IPs only from explicitly configured
+proxies. To add a provider, implement its DTO, typed request/credential maps,
+registry entry and strategy; local is the only currently enabled provider.
