@@ -71,3 +71,37 @@ Evidence: `.specify/memory/constitution.md` principles I, II and V. Pre/post-des
 **Alternatives considered**: One class with optional email/password/provider-token fields allows invalid combinations and grows with every provider. A provider-only base class would conflict with strict global whitelisting. Separate future provider routes remain possible for redirect/callback protocols, while sharing common credential issuance.
 
 Sources: [Nest validation and concrete runtime DTOs](https://docs.nestjs.com/techniques/validation), [ValidationPipe implementation and Object metatype handling](https://raw.githubusercontent.com/nestjs/nest/master/packages/common/pipes/validation.pipe.ts). Local evidence: src/configure-app.ts and src/auth/strategies/auth-strategy.interface.ts. This selects existing class-transformer/class-validator capabilities, not a new dependency.
+
+## 8. One AuthController spec (2026-10-29)
+
+**Decision**: Put all registration, login, refresh and logout controller contracts in `src/auth/auth.controller.spec.ts`, retaining four endpoint-specific `describe` groups and their local service mocks/application hooks. Deduplicate imports and initialize `useAuthTestEnvironment()` once at file scope. Delete the three endpoint-specific controller specs after moving their cases.
+
+**Rationale**: These tests exercise one AuthController. A single colocated file follows the user's requested organization and constitution principles I and V. Keeping existing fixtures scoped to each group minimizes behavior changes. Current Vitest discovery already includes the target path, so no dependency or configuration change is needed. File-wide mock resets require sequential groups. All current cases override ThrottlerGuard; this reorganization preserves that scope and leaves actual throttling verification in existing suites.
+
+**Alternatives considered**: Retaining four files conflicts with the requested layout. A shared application and service mock would reduce setup duplication but add cross-endpoint state coupling. Moving service/repository/E2E cases into the controller spec would mix ownership and is outside this request.
+
+**Evidence**: `src/auth/auth.controller.spec.ts`, `src/auth/auth-login.controller.spec.ts`, `src/auth/auth-refresh.controller.spec.ts`, `src/auth/auth-logout.controller.spec.ts`, `src/auth/testing/auth-test-config.ts`, `vitest.config.ts`, `vitest.config.e2e.ts`, and `.specify/memory/constitution.md`. Research is based on the checked-in implementation; there are no new technology choices or unresolved clarifications.
+
+**Case inventory**: 51 expanded cases: registration 26, login 6, refresh 9 and logout 10. The baseline run discovered all 51 but could not execute them because the sandbox rejected Supertest's localhost listener with `listen EPERM: operation not permitted 127.0.0.1`. No assertion-level passing baseline is claimed; implementation validation must run where localhost listeners are permitted.
+
+## 9. One auth module service spec (2026-10-29)
+
+**Decision**: Merge all auth module service tests into `src/auth/auth.service.spec.ts`, including the distinct AuthTokenService cases. Preserve groups for registration, login, stateless access, refresh, logout and token service behavior. Remove `auth-login.service.spec.ts`, `auth-access.service.spec.ts`, `auth-refresh.service.spec.ts`, `auth-logout.service.spec.ts` and `auth-token.service.spec.ts` after moving all cases.
+
+**Rationale**: The user requested all service specs in one file, following the controller layout. Consolidation remains inside `src/auth/` and preserves layer ownership, satisfying constitution principles I and V; no runtime responsibilities change. Subject-specific groups keep the two production services identifiable. Existing Vitest discovery includes the destination without configuration changes.
+
+**Isolation decisions**: Registration and login have conflicting file-level user fixtures (IDs 1 and 42); move them into their own groups. Scope the token service's config, clock, JwtService and signing context to its own group. Keep registration's hoisted Argon2 mock: the other current suites use mocked strategy authentication or JWT operations, so no real Argon2 is needed. Keep Logger spies/restoration scoped to registration and preserve JwtService spy cleanup. File-wide mock resets require sequential groups and fully initialized local mocks; preserve refresh/token clock resets.
+
+**Alternatives considered**: Keeping separate behavior files conflicts with the requested consolidation. Keeping the token service in a separate file would retain one spec per production class, but the user's request covers all auth service specs; retain this subject boundary through groups instead. One shared fixture/service/clock for all groups would couple mocked orchestration and real cryptographic tests. Combining production services or other domains' tests is unnecessary.
+
+**Evidence and validation**: Inspected the six service spec files, `src/auth/testing/auth-test-config.ts`, `vitest.config.ts` and the constitution. Baseline command in the quickstart passed all 104 expanded tests across six files on 2026-10-29. This is pre-consolidation evidence, not an implemented merge. No unresolved clarifications or new technology choices remain.
+
+## 10. Validation exception factory placement (2026-10-29)
+
+**Decision**: Move `src/auth/auth-validation.ts` to `src/auth/exceptions/auth-validation.exception.ts`, preserving its three exported factory functions. Update configureApp and LoginValidationPipe consumer imports and change the local AuthError import to `./auth-errors.js`. Remove the old source file after updating all references.
+
+**Rationale**: The file creates sanitized BadRequestException responses and raises AuthError for missing logout credentials. It belongs with auth exception handling, under the module's existing `exceptions/` folder. The descriptive filename identifies exception factories; global/parameter pipes still own validation execution. Plain functions need no Nest provider registration. Constitution principles I, II and V remain satisfied.
+
+**Alternatives considered**: Retaining the file in the auth root leaves related exception construction scattered. Folding it into the exception filter mixes response construction with exception handling. Moving it into AuthService couples business orchestration to HTTP validation. A compatibility re-export is unnecessary for these internal consumers.
+
+**Evidence**: `src/auth/auth-validation.ts` exports registrationValidationException, authValidationException and logoutValidationException; source search identifies consumers in `src/configure-app.ts` and `src/auth/pipes/login-validation.pipe.ts`. Preserve registration field codes/messages, generic sanitized auth errors and logout's missing-token 401 behavior. No new technologies, external interfaces or unresolved questions are introduced.

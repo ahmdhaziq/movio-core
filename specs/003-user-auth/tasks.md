@@ -16,6 +16,12 @@
 - `[P]` means a task can be authored alongside other marked tasks in the same group after their phase prerequisites. Shared service/controller/repository edits stay sequential.
 - Paths are repository-relative. Keep ESM `.js` imports. Use the existing isolated-schema database helper; never reset developer tables. Future `validation.md` is a short implementation evidence log, not another feature specification.
 
+## Revision scope — 2026-10-29
+
+T001–T062 are completed implementation history; retain their checked status and original paths. T063–T073 implement the plan's three organization changes and are now complete; executed checks are recorded in `validation.md`. Historical controller/service spec paths and `src/auth/auth-validation.ts` are superseded by the destinations below once those moves are complete. No new business behavior, dependency, persistence model or migration is requested. All auth module service cases, including AuthTokenService, belong in `src/auth/auth.service.spec.ts`; controller contracts belong in `src/auth/auth.controller.spec.ts`.
+
+Constitution check: PASS. Auth owns the moved factories and all non-E2E tests; Controller → Service → Repository responsibilities and production class boundaries remain unchanged. Preserve existing coverage and error semantics. No new test suite is required just to mirror these file moves. Follow [plan.md](plan.md), research decisions 8–10 and the three relocation/consolidation guides in [quickstart.md](quickstart.md).
+
 ## Phase 1: Setup — Add the JWT dependency and safe test configuration
 
 Use the existing project and auth module. Do not create another application or install Passport.
@@ -178,6 +184,64 @@ Complete after all four stories. These tasks finish the feature; they are not a 
 
 - [X] T062 Review `specs/003-user-auth/spec.md`, `contracts/authentication-api.md`, `contracts/auth-internal.md` and `tasks.md` against the implementation; record FR-001–FR-017 and SC-001–SC-009 evidence in `specs/003-user-auth/validation.md`. Confirm no Passport, server-session checks, raw-token storage, unintended social provider, admin role, or client UI was added, and every accepted behavior has passing evidence.
 
+## Phase 8: Revision setup — Baseline inventory
+
+**Goal**: Record the existing case inventory before files move.
+
+- [X] T063 Inventory all cases in `src/auth/auth.controller.spec.ts`, `src/auth/auth-login.controller.spec.ts`, `src/auth/auth-refresh.controller.spec.ts`, `src/auth/auth-logout.controller.spec.ts`, `src/auth/auth.service.spec.ts`, `src/auth/auth-login.service.spec.ts`, `src/auth/auth-access.service.spec.ts`, `src/auth/auth-refresh.service.spec.ts`, `src/auth/auth-logout.service.spec.ts` and `src/auth/auth-token.service.spec.ts`; record case names, parameterized inputs and the expected 51 controller/104 service totals in `specs/003-user-auth/validation.md`. Reuse the recorded 104-test passing service baseline; obtain a passing controller baseline with the quickstart command where localhost listeners are allowed, or record the actual environment limitation without claiming a pass. Depends on no new implementation task.
+
+## Phase 9: Revision foundation — Validation exception factories
+
+**Goal**: Relocate the shared factories while preserving all endpoint validation semantics.
+
+- [X] T064 Move `src/auth/auth-validation.ts` to `src/auth/exceptions/auth-validation.exception.ts`; preserve all three exports and implementation, change its AuthError import to `./auth-errors.js`, update `src/configure-app.ts` to `./auth/exceptions/auth-validation.exception.js` and `src/auth/pipes/login-validation.pipe.ts` to `../exceptions/auth-validation.exception.js`. Search `src/` and `test/` for other consumers and update them, then remove the old file without a re-export. Preserve registration-specific safe field errors, generic authentication 400 responses and missing/empty logout credential 401 behavior; keep DTO rules and pipe ordering. Run existing login pipe/filter tests and current four controller specs per `specs/003-user-auth/quickstart.md` before proceeding. Depends on T063.
+
+## Phase 10: Revision US1 — Login and registration test consolidation (P1)
+
+**Goal**: Establish the two destination specs, preserving registration/login and the token service subject boundary.
+
+**Independent test**: Existing registration/login HTTP and service cases still pass with exact-password/email normalization, generic failures, safe logging, token deadlines and commit-before-response assertions. Token signing/verification cases use real JwtService.
+
+- [X] T065 [P] [US1] Move every case from `src/auth/auth-login.service.spec.ts` and `src/auth/auth-token.service.spec.ts` into `src/auth/auth.service.spec.ts`. Keep registration/login groups and a distinct AuthTokenService group with its three existing subgroups. Scope registration dto/user (ID 1), login user (ID 42), token config/JwtService/clock/context/service to their owning groups; deduplicate imports while preserving ESM specifiers. Retain the hoisted Argon2 hashing mock, registration-only Logger spies/restore hooks, token clock resets and JwtService spy cleanup. Keep groups sequential with initialized local mocks; preserve all assertions and remove the two source specs after transfer. Run the destination service spec. Depends on T064.
+
+- [X] T066 [P] [US1] Move all cases from `src/auth/auth-login.controller.spec.ts` into `src/auth/auth.controller.spec.ts`, preserving registration and login groups with local app/service mocks and lifecycle hooks. Deduplicate imports and call useAuthTestEnvironment once at file scope; preserve actual configureApp/global-plus-parameter pipes, ThrottlerGuard override, sanitized errors, no-store header and exact-password dispatch. Keep groups sequential, retain app.close cleanup, delete the login source spec after transfer and run the destination controller spec. Depends on T064.
+
+## Phase 11: Revision US2 — Stateless access service tests (P1)
+
+**Goal**: Keep all AuthService access cases in the shared service spec.
+
+**Independent test**: Valid access authenticates using real JWT verification while repository/UserService failure spies receive zero calls; token profile/claim/expiry cases remain intact.
+
+- [X] T067 [US2] Move all cases from `src/auth/auth-access.service.spec.ts` into the stateless-access group in `src/auth/auth.service.spec.ts`; retain its real AuthTokenService/JwtService, local injected clock and unavailable-persistence spies. Preserve the token verification groups moved by T065, remove the access source spec after transfer and run `src/auth/auth.service.spec.ts`. Depends on T065 and T066; do not edit the destination alongside any other service-consolidation task.
+
+## Phase 12: Revision US3 — Refresh test consolidation (P2)
+
+**Goal**: Preserve renewal service and HTTP contracts in their respective destination files.
+
+**Independent test**: Refresh preserves the fixed deadline, consumes before replacement, commits reuse revocation before rejection and retains body-only credential validation with safe 400/401/503 responses.
+
+- [X] T068 [P] [US3] Move every case from `src/auth/auth-refresh.service.spec.ts` into a refresh group in `src/auth/auth.service.spec.ts`; preserve group-local repository/token mocks, transaction handle, root/claims fixtures and per-test clock reset. Keep near-deadline access caps, digest/owner checks, consumed-root descendant acceptance and commit-before-error assertions intact. Remove the source spec after transfer and run the destination service spec. Depends on T067.
+
+- [X] T069 [P] [US3] Move every case from `src/auth/auth-refresh.controller.spec.ts` into the refresh group in `src/auth/auth.controller.spec.ts`; preserve local app/service mocks, actual validation pipes, lifecycle cleanup, ThrottlerGuard override, body-only credential checks, malformed input matrix, safe error statuses and no-store header. Deduplicate imports, remove the source spec after transfer and run the destination controller spec. Depends on T067. Existing suites bypass throttling; do not claim this move adds real rate-limit coverage.
+
+## Phase 13: Revision US4 — Logout test consolidation (P2)
+
+**Goal**: Preserve logout service/HTTP cases in the shared destination specs.
+
+**Independent test**: Access/refresh logout identifies only its own family, malformed/unknown credentials retain generic outcomes, persistence failure never reports success, and missing credentials remain 401 while other malformed fields remain 400.
+
+- [X] T070 [P] [US4] Move every case from `src/auth/auth-logout.service.spec.ts` into the logout group in `src/auth/auth.service.spec.ts`; preserve local transaction/repository/token/clock fixtures and all parameterized cases for consumed tokens, malformed/expired/unknown/revoked credentials, owner/digest mismatches, missing tokens and persistence failures. Remove the source spec after transfer and run the destination service spec. Depends on T068 and T069.
+
+- [X] T071 [P] [US4] Move every case from `src/auth/auth-logout.controller.spec.ts` into the logout group in `src/auth/auth.controller.spec.ts`; preserve local app/service mocks, actual validation, cleanup, body-only access/refresh credentials, no-store response and missing-token versus malformed-field status assertions. Remove the source spec after transfer and run the destination controller spec. Depends on T068 and T069.
+
+## Phase 14: Revision polish — Verify final layout and coverage
+
+**Goal**: Prove all three organization changes preserve existing behavior.
+
+- [X] T072 Run `npm test -- src/auth/auth.controller.spec.ts src/auth/auth.service.spec.ts src/auth/pipes/login-validation.pipe.spec.ts src/auth/exceptions/auth-exception.filter.spec.ts`, `npm run lint` and `npm run build`; compare destination cases against T063's inventory in `specs/003-user-auth/validation.md`, requiring all 51 controller and 104 service cases with no omissions or duplicates. Verify `src/auth/` has only `auth.controller.spec.ts` and `auth.service.spec.ts` for these subjects, all eight old split specs and `src/auth/auth-validation.ts` are absent, and source/test references resolve the new exception factory path. Preserve other domains' service specs and existing guard/pipe/configuration/strategy/repository/E2E placement. Record actual failures or listener restrictions without marking successful verification. Depends on T070 and T071.
+
+- [X] T073 Reconcile `specs/003-user-auth/quickstart.md`, `specs/003-user-auth/contracts/auth-internal.md` and `specs/003-user-auth/validation.md` with the implemented destinations and executed results; preserve historical baseline evidence and distinguish it from post-move checks. Confirm no production service merge, auth-audit refactor, dependency, validation behavior, API contract or Prisma migration change was introduced. Mark T063–T073 complete only after their actual work and validation succeed. Depends on T072.
+
 ## Dependencies and execution order
 
 ```text
@@ -198,6 +262,16 @@ These stories are independently testable after their prerequisites; they are not
 
 Within a phase, execute unmarked implementation tasks in order. Test tasks define behavior first; schema/repository methods precede services, services precede endpoint integration, and the phase ends with passing checks. All token deadlines/keys and wire shapes are fixed by the linked contracts; do not invent a new shape during implementation.
 
+### Revision dependencies
+
+```text
+T063 baseline → T064 exception move → (T065 service + T066 controller)
+→ T067 access → (T068 refresh service + T069 refresh controller)
+→ (T070 logout service + T071 logout controller) → T072 verification → T073 evidence
+```
+
+The revision introduces no new user stories: US1–US4 retain the specification's priorities and acceptance criteria. Incremental story checkpoints run the destination file, with not-yet-moved source files retained until their assigned task. Any same-file mutations are sequential. Phase 14 closes the refactor only after all stories' cases have moved.
+
 ## Parallel execution examples
 
 | Group | Tasks that may be authored together | Prerequisite |
@@ -207,6 +281,8 @@ Within a phase, execute unmarked implementation tasks in order. Test tasks defin
 | US2 tests | T031 and T032 — extraction and guard test files | US1 complete |
 | US3 tests | T041, T042, T043 — service, repository and HTTP test files | US2 complete |
 | US4 tests | T051 and T052 — service and HTTP test files | US3 complete |
+
+The table above describes completed historical authoring only. For the revision, US1 allows T065/T066 together, US3 allows T068/T069 together, and US4 allows T070/T071 together because each pair edits separate service/controller destinations. US2's T067 is sequential; a read-only comparison of its token case inventory can occur alongside it. Do not author different user stories into the same destination spec concurrently.
 
 Do not run database suites against shared fixtures or run mutations of the same file in parallel. Each database suite retains its own schema. Parallel test authoring does not mean the same feature's endpoints are ready before its implementation tasks.
 
@@ -218,6 +294,8 @@ Do not run database suites against shared fixtures or run mutations of the same 
 4. Build US3 to replace refresh credentials safely; prove fixed expiry and replay/concurrency behavior.
 5. Build US4 to revoke renewal for one login; prove independent logins and existing access expiry.
 6. Finish performance, full regression checks and usage documentation. All four stories are required to complete the requested feature; the MVP is a review checkpoint, not permission to omit refresh/logout.
+
+For this revision, start with T063–T066 as the first reviewable increment: factory relocation plus registration/login/token groups. Then complete US2, US3 and US4 moves before final verification; the accepted scope requires both final consolidated files. The original feature MVP remains US1 + US2. Do not reopen completed feature work or generate new persistence constraints for these organization-only revisions.
 
 ## Requirement coverage
 
@@ -235,4 +313,15 @@ Do not run database suites against shared fixtures or run mutations of the same 
 
 ## Task counts
 
-Total: **62 tasks**. Setup/foundation/polish: **18**. US1: **16**. US2: **10**. US3: **10**. US4: **8**. Parallel-marked test-authoring tasks: **16**.
+Total: **73 tasks**: **62 completed historical tasks** and **11 completed revision tasks** (T063–T073).
+
+| Scope | Historical | New | Total |
+|---|---:|---:|---:|
+| Setup/foundation/polish | 18 | 4 | 22 |
+| US1: Login | 16 | 2 | 18 |
+| US2: Guarded operations | 10 | 1 | 11 |
+| US3: Refresh | 10 | 2 | 12 |
+| US4: Logout | 8 | 2 | 10 |
+| All tasks | 62 | 11 | 73 |
+
+Parallel-marked tasks: **22** (16 historical, 6 revision). All 73 tasks are complete. Revision tasks retain sequential IDs, exact paths and story labels within story phases. Historical completed tasks are preserved.

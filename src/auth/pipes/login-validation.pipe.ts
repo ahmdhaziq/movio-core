@@ -1,7 +1,7 @@
 import { Injectable, PipeTransform } from '@nestjs/common';
 import { plainToInstance, type ClassConstructor } from 'class-transformer';
 import { validate } from 'class-validator';
-import { authValidationException } from '../auth-validation.js';
+import { authValidationException } from '../exceptions/auth-validation.exception.js';
 import { LoginLocalDto } from '../dto/login-local.dto.js';
 import { AuthProvider } from '../enums/auth-provider.enum.js';
 

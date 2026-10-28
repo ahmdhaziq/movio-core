@@ -7,7 +7,7 @@ import {
   registrationValidationException,
   authValidationException,
   logoutValidationException,
-} from './auth/auth-validation.js';
+} from './auth/exceptions/auth-validation.exception.js';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 
 export function configureApp(app: INestApplication): void {

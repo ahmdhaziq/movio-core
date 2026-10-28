@@ -2,6 +2,18 @@
 
 No AuthSession entity or auth_session table is created. Access JWTs are not persisted or looked up. One login's related refresh generations are a refresh family, represented entirely in refresh_token.
 
+## Controller-test consolidation impact (2026-10-29)
+
+The single-file controller-test revision changes no domain entities, fields, relationships, validation rules, state transitions or persistence artifacts. The existing model below remains authoritative. Controller test fixtures retain their synthetic user and token responses inside endpoint-specific groups in `src/auth/auth.controller.spec.ts`; these fixtures introduce no persisted model. No Prisma schema edit or migration is required for this revision.
+
+## Service-test consolidation impact (2026-10-29)
+
+All auth service test fixtures move into behavior/subject groups in `src/auth/auth.service.spec.ts`. User DTO fixtures, refresh rows, transaction doubles, signed-claim contexts and injected clocks retain their existing fields and semantics. No entity, relationship, validation rule, state transition, production service responsibility, database schema or migration changes. AuthService and AuthTokenService remain distinct production classes.
+
+## Validation exception relocation impact (2026-10-29)
+
+Moving validation exception factories to `src/auth/exceptions/auth-validation.exception.ts` changes no entity, field, relationship, lifecycle transition or persistence artifact. Existing DTO validation rules and public error payload fields/codes remain unchanged. No Prisma migration is required.
+
 ## Existing ownership
 
 User.id and AuthIdentity.id are integer primary keys. AuthIdentity.identity_id is provider-specific text; local identities store String(user.id). Name the new integer FK auth_identity_id to avoid confusing these. Login and refresh eligibility require both deleted_at fields null; access validation does not read either record.

@@ -69,3 +69,379 @@ Requirement evidence review:
 Architecture review: Auth owns DTOs, strategies, guard, errors/filter, token infrastructure and refresh persistence. Controllers handle transport; services orchestrate; repositories own all Prisma/parameterized SQL. Dependencies stay AuthModule → UserModule/PrismaModule with Nest DI and no cycle. Module tests remain colocated; only full-application E2E lives under test/. One additive reviewed migration preserves retained accounts and enforces composite owner/root FKs plus one-current partial uniqueness. No Passport, server-session lookup, raw-token storage, enabled social provider, admin roles or client UI added.
 
 No extension hooks were registered (`.specify/extensions.yml` absent). All 62 tasks complete. No known failing checks remain. Before running the API against an application database, supply distinct signing keys and apply the migration with `prisma migrate deploy`; these checks deliberately did not migrate the application's public schema. The planned single-instance limiter and expiry-based access revocation boundary remain as specified.
+
+## Organization revision — 2026-10-29 (T063–T073)
+
+Baseline: service suites passed **104/104** in six files. The sandboxed controller run discovered 51 cases but localhost listeners were blocked; rerunning the four controller files with listener permission passed **51/51**. No assertion changes were needed.
+
+### Baseline expanded case inventory
+
+Case names below include expanded parameterized inputs where the existing title interpolates them. Parameter matrices are preserved verbatim during transfer and compared against the original source.
+
+
+**auth-access.service.spec.ts** (1 cases)
+
+- Stateless AuthService access authenticates with unavailable persistence and performs no database calls
+
+
+**auth-login.controller.spec.ts** (6 cases)
+
+- Login HTTP contract through real pipes accepts flat local input and preserves the exact password
+
+- Login HTTP contract through real pipes rejects malformed fields before dispatch
+
+- Login HTTP contract through real pipes rejects malformed fields before dispatch
+
+- Login HTTP contract through real pipes rejects malformed fields before dispatch
+
+- Login HTTP contract through real pipes rejects malformed fields before dispatch
+
+- Login HTTP contract through real pipes returns generic login failure
+
+
+**auth-login.service.spec.ts** (6 cases)
+
+- Login orchestration dispatches only credentials and stores only the refresh digest after ownership recheck
+
+- Login orchestration waits for commit before disclosing tokens
+
+- Login orchestration denies ownership becoming inactive before commit
+
+- Login orchestration classifies storage P1001 safely
+
+- Login orchestration classifies storage P2002 safely
+
+- Login orchestration discloses no pair when signing fails
+
+
+**auth-logout.controller.spec.ts** (10 cases)
+
+- Logout HTTP contract accepts explicit access body credential
+
+- Logout HTTP contract accepts explicit refresh body credential
+
+- Logout HTTP contract rejects missing credentials with 401 despite access header
+
+- Logout HTTP contract rejects missing credentials with 401 despite access header
+
+- Logout HTTP contract rejects missing credentials with 401 despite access header
+
+- Logout HTTP contract rejects invalid fields safely with 400
+
+- Logout HTTP contract rejects invalid fields safely with 400
+
+- Logout HTTP contract rejects invalid fields safely with 400
+
+- Logout HTTP contract rejects invalid fields safely with 400
+
+- Logout HTTP contract rejects invalid fields safely with 400
+
+
+**auth-logout.service.spec.ts** (11 cases)
+
+- Logout orchestration revokes only the verified access family before success
+
+- Logout orchestration revokes only the verified refresh family before success
+
+- Logout orchestration allows consumed refresh for logout identification only
+
+- Logout orchestration returns generic confirmation for malformed without unrelated changes
+
+- Logout orchestration returns generic confirmation for expired without unrelated changes
+
+- Logout orchestration returns generic confirmation for unknown without unrelated changes
+
+- Logout orchestration returns generic confirmation for revoked without unrelated changes
+
+- Logout orchestration returns generic confirmation for owner-mismatch without unrelated changes
+
+- Logout orchestration returns generic confirmation for bad-digest without unrelated changes
+
+- Logout orchestration rejects missing credentials
+
+- Logout orchestration never claims success on required persistence failure
+
+
+**auth-refresh.controller.spec.ts** (9 cases)
+
+- Refresh HTTP contract accepts only body refresh credential, no access header required
+
+- Refresh HTTP contract safely rejects malformed body
+
+- Refresh HTTP contract safely rejects malformed body
+
+- Refresh HTTP contract safely rejects malformed body
+
+- Refresh HTTP contract safely rejects malformed body
+
+- Refresh HTTP contract safely rejects malformed body
+
+- Refresh HTTP contract safely rejects malformed body
+
+- Refresh HTTP contract maps AUTHENTICATION_REQUIRED
+
+- Refresh HTTP contract maps AUTH_TEMPORARILY_UNAVAILABLE
+
+
+**auth-refresh.service.spec.ts** (8 cases)
+
+- Refresh orchestration consumes before replacing, returns safe user and preserves fixed deadline
+
+- Refresh orchestration caps near-deadline access and never restarts 30 days
+
+- Refresh orchestration rejects missing without issuing tokens
+
+- Refresh orchestration rejects revoked without issuing tokens
+
+- Refresh orchestration rejects deleted without issuing tokens
+
+- Refresh orchestration rejects bad-digest without issuing tokens
+
+- Refresh orchestration commits consumed-token revocation before throwing 401
+
+- Refresh orchestration allows a current descendant even when its root was consumed
+
+
+**auth-token.service.spec.ts** (35 cases)
+
+- Purpose-specific signing signs exact access and refresh profiles with separate keys/audiences
+
+- Purpose-specific signing caps access at the fixed original renewal deadline
+
+- Purpose-specific signing propagates signing failure without a usable result
+
+- Stateless access verification performs exactly one signature verification and returns only verified principal
+
+- Stateless access verification rejects invalid runtime claims {"sub":"042"}
+
+- Stateless access verification rejects invalid runtime claims {"sub":42}
+
+- Stateless access verification rejects invalid runtime claims {"sub":"-1"}
+
+- Stateless access verification rejects invalid runtime claims {"auth_identity_id":0}
+
+- Stateless access verification rejects invalid runtime claims {"auth_identity_id":"7"}
+
+- Stateless access verification rejects invalid runtime claims {"fid":"bad"}
+
+- Stateless access verification rejects invalid runtime claims {"jti":null}
+
+- Stateless access verification rejects invalid runtime claims {}
+
+- Stateless access verification rejects invalid runtime claims {"exp":1800000000}
+
+- Stateless access verification rejects invalid runtime claims {"iat":1800000001}
+
+- Stateless access verification rejects invalid runtime claims {"iat":"1800000000"}
+
+- Stateless access verification rejects invalid runtime claims {"token_use":"refresh"}
+
+- Stateless access verification rejects invalid runtime claims {"renewal_exp":1800000001}
+
+- Stateless access verification rejects invalid runtime claims {"exp":1800003601}
+
+- Stateless access verification rejects wrong cryptographic profile {"secret":{"type":"Buffer","data":[82,82,82,82,82,82,82,82,82,82,82,82,82,82,82,82,82,82,82,82,82,82,82,82,82,82,82,82,82,82,82,82]}}
+
+- Stateless access verification rejects wrong cryptographic profile {"algorithm":"HS384"}
+
+- Stateless access verification rejects wrong cryptographic profile {"issuer":"other"}
+
+- Stateless access verification rejects wrong cryptographic profile {"audience":"movio-refresh"}
+
+- Stateless access verification uses current clock on every verification, rejecting exactly at expiry
+
+- Stateless access verification rejects refresh-purpose tokens as access
+
+- Refresh cryptographic profile rejects access credentials at the refresh verifier
+
+- Refresh cryptographic profile rejects invalid refresh claims {"token_use":"access"}
+
+- Refresh cryptographic profile rejects invalid refresh claims {"exp":1802591999}
+
+- Refresh cryptographic profile rejects invalid refresh claims {"renewal_exp":1802591999}
+
+- Refresh cryptographic profile rejects invalid refresh claims {"iat":1800000001}
+
+- Refresh cryptographic profile rejects invalid refresh claims {"sub":"0"}
+
+- Refresh cryptographic profile rejects invalid refresh claims {"fid":"bad"}
+
+- Refresh cryptographic profile rejects invalid refresh claims {"auth_identity_id":"7"}
+
+- Refresh cryptographic profile rejects invalid refresh claims {}
+
+- Refresh cryptographic profile accepts immediately before and rejects exactly at the renewal deadline
+
+- Refresh cryptographic profile preserves unexpected verifier failures instead of classifying them as invalid credentials
+
+
+**auth.controller.spec.ts** (26 cases)
+
+- Registration controller validation rejects invalid name without invoking services
+
+- Registration controller validation rejects invalid name without invoking services
+
+- Registration controller validation rejects invalid name without invoking services
+
+- Registration controller validation rejects invalid name without invoking services
+
+- Registration controller validation rejects invalid name without invoking services
+
+- Registration controller validation rejects invalid email without invoking services
+
+- Registration controller validation rejects invalid email without invoking services
+
+- Registration controller validation rejects invalid email without invoking services
+
+- Registration controller validation rejects invalid email without invoking services
+
+- Registration controller validation rejects invalid email without invoking services
+
+- Registration controller validation rejects invalid password without invoking services
+
+- Registration controller validation rejects invalid password without invoking services
+
+- Registration controller validation rejects invalid password without invoking services
+
+- Registration controller validation rejects invalid password without invoking services
+
+- Registration controller validation rejects invalid password without invoking services
+
+- Registration controller validation rejects invalid provider without invoking services
+
+- Registration controller validation rejects invalid provider without invoking services
+
+- Registration controller validation rejects invalid provider without invoking services
+
+- Registration controller validation rejects invalid provider without invoking services
+
+- Registration controller validation rejects invalid provider without invoking services
+
+- Registration controller validation rejects invalid role without invoking services
+
+- Registration controller validation rejects invalid user_id without invoking services
+
+- Registration controller validation rejects invalid identity_id without invoking services
+
+- Registration controller validation rejects invalid password_hash without invoking services
+
+- Registration controller validation normalizes name/email and preserves the exact password
+
+- Registration controller validation logs validation outcome without submitted credentials or body
+
+
+**auth.service.spec.ts** (43 cases)
+
+- AuthService prepares credentials before atomically creating a user and identity
+
+- AuthService does not report success until commit has resolved
+
+- AuthService rejects retained users even without a local identity
+
+- AuthService rejects retained users even without a local identity
+
+- AuthService rejects an email claimed between the precheck and transaction
+
+- AuthService maps availability P1001 to 503
+
+- AuthService maps availability P1002 to 503
+
+- AuthService maps availability P1008 to 503
+
+- AuthService maps availability P1017 to 503
+
+- AuthService maps availability P2024 to 503
+
+- AuthService maps availability P2034 to 503
+
+- AuthService recognizes positive P2028 timeout evidence
+
+- AuthService recognizes positive P2028 timeout evidence
+
+- AuthService maps initialization/configuration P1000 to 500
+
+- AuthService maps initialization/configuration P1003 to 500
+
+- AuthService maps initialization/configuration P1010 to 500
+
+- AuthService maps initialization/configuration P1012 to 500
+
+- AuthService maps initialization/configuration P1013 to 500
+
+- AuthService maps initialization/configuration P1014 to 500
+
+- AuthService maps initialization/configuration P1015 to 500
+
+- AuthService recognizes unavailable initialization errorCode
+
+- AuthService classifies P2002 and its constraint/cause
+
+- AuthService classifies P2002 and its constraint/cause
+
+- AuthService classifies P2002 and its constraint/cause
+
+- AuthService classifies P2002 and its constraint/cause
+
+- AuthService classifies P2002 and its constraint/cause
+
+- AuthService classifies P2002 and its constraint/cause
+
+- AuthService classifies P2028 and its constraint/cause
+
+- AuthService classifies P2003 and its constraint/cause
+
+- AuthService classifies P2004 and its constraint/cause
+
+- AuthService classifies hashing failures before any write
+
+- AuthService classifies hashing failures before any write
+
+- AuthService classifies hashing failures before any write
+
+- AuthService classifies hashing failures before any write
+
+- AuthService classifies hashing failures before any write
+
+- AuthService does not treat arbitrary storage objects or resource errors as hashing failures
+
+- AuthService does not expose diagnostics in unexpected failures
+
+- AuthService logs safe outcome metadata on success and failures without credentials
+
+- AuthService preserves recognized dependency outcomes without exposing diagnostics
+
+- AuthService preserves recognized dependency outcomes without exposing diagnostics
+
+- AuthService preserves recognized dependency outcomes without exposing diagnostics
+
+- AuthService rejects an unconfigured strategy before hashing or touching persistence
+
+- AuthService never trusts a plain object carrying a Prisma error code
+
+### Completed revision checks
+
+T063 baseline inventory above contains all 155 expanded cases. Baseline run: six service specs passed 104/104; the four controller specs passed 51/51 after allowing Supertest's localhost listeners. The earlier sandbox listener failure was environmental and is superseded by this passing baseline.
+
+T064 moved the factories unchanged to `src/auth/exceptions/auth-validation.exception.ts`, updated both consumers and its local AuthError import, and removed the old file. All existing four controller suites plus login pipe/filter suites passed before consolidation (77 cases).
+
+| Task/checkpoint | Result |
+|---|---|
+| T065: registration/login/token service consolidation | 84 service cases passed |
+| T066: registration/login controller consolidation | 32 controller cases passed |
+| T067: stateless access transfer | 85 service cases passed |
+| T068: refresh service transfer | 93 service cases passed |
+| T069: refresh controller transfer | 41 controller cases passed |
+| T070: logout service transfer | 104 service cases passed |
+| T071: logout controller transfer | 51 controller cases passed |
+| T072: final focused controller/service/login-pipe/filter run | 4 files, 181 cases passed |
+| `npm run lint` | PASS |
+| `npm run build` | PASS |
+| `git diff --check` | PASS |
+
+Final command: `npm test -- src/auth/auth.controller.spec.ts src/auth/auth.service.spec.ts src/auth/pipes/login-validation.pipe.spec.ts src/auth/exceptions/auth-exception.filter.spec.ts`. HTTP test runs used permitted localhost listeners; persistence remained mocked and no database reset/migration was performed.
+
+Case preservation checks compare the expanded case-name multisets against the original ten-file baseline: identical 51 controller and 104 service cases, with only an added AuthTokenService parent group. A TypeScript AST/printer comparison also confirms identical test bodies and parameter matrices (19 controller and 58 service test-call expressions, including `it.each` tables). Imports and fixture scoping changed; case inputs and assertions did not. Original source snapshots and JSON reports used for comparison are temporary verification artifacts under `/private/tmp/`.
+
+Final inventory: only `src/auth/auth.controller.spec.ts` and `src/auth/auth.service.spec.ts` remain for auth controller/service subjects. All eight split source specs and `src/auth/auth-validation.ts` are removed. Both factory consumers use `exceptions/auth-validation.exception.js`. AuthService and AuthTokenService remain distinct production classes; DTO rules, error semantics, audit logging, dependencies, API contracts and Prisma artifacts are unchanged. Existing guard/pipe/strategy/config/repository/E2E tests and other domains retain their placement.
+
+T073 reconciles the quickstart and internal contract with these implemented paths and results. The earlier 62-task completion statement and full database/E2E results above are historical; this revision completes T063–T073, making all 73 tasks complete. No database/E2E rerun was needed for this file organization change. No extension hooks are registered (`.specify/extensions.yml` absent).

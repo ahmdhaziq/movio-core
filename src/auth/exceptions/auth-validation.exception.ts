@@ -1,4 +1,4 @@
-import { AuthError } from './exceptions/auth-errors.js';
+import { AuthError } from './auth-errors.js';
 import { BadRequestException } from '@nestjs/common';
 import type { ValidationError } from 'class-validator';
 // Used by the application ValidationPipe before invoking this controller.

@@ -1,6 +1,6 @@
 # Implementation Plan: Stateless Access JWTs and Stored Refresh Tokens
 
-**Branch**: `main` (actual Git branch; feature resolver label `003-user-auth`) | **Date**: 2026-10-16 | **Spec**: [spec.md](spec.md)
+**Branch**: `feat/auth` (actual Git branch; feature resolver label `003-user-auth`) | **Date**: 2026-10-29 | **Spec**: [spec.md](spec.md)
 
 **Input**: Existing auth module, provider-keyed authenticate() DTOs, JwtService signing/validation, stored refresh tokens, and the user's explicit decision to remove server sessions and access-time database checks.
 
@@ -10,6 +10,24 @@ Keep one-hour access JWT authentication stateless. Persist only refresh credenti
 
 Extend existing AuthStrategy with authenticate() and local email/password verification. Protect business routes with our own AccessTokenGuard implementing Nest CanActivate. It extracts the bearer token, calls AuthService.validateAccessToken(raw), attaches the verified principal to request.user and allows the handler only on success. Nest JwtService signs both token types and verifies their signatures/expiry through service methods. Refresh validation additionally checks database state. No Passport packages or JWT transport strategy are introduced; future provider integrations remain owned by our strategy layer.
 
+### Planning revision: one AuthController spec
+
+Consolidate registration, login, refresh and logout HTTP contract tests into `src/auth/auth.controller.spec.ts`. Keep endpoint-specific `describe` groups in that file. Move every existing case from `auth-login.controller.spec.ts`, `auth-refresh.controller.spec.ts` and `auth-logout.controller.spec.ts`, then remove those three files. Preserve assertions, parameterized inputs, real Nest/global and parameter pipes, mocked service behavior, safe errors and response headers.
+
+This revision changes test organization only. Controller, service and repository responsibilities, runtime code, dependencies, API contracts and Prisma migrations require no changes. Existing service, pipe, guard, repository and E2E suites retain their layer ownership. Earlier completed tasks remain historical implementation records; their endpoint-specific controller spec paths are superseded by this revision when follow-up tasks are generated.
+
+### Planning revision: one auth service spec
+
+Consolidate all six auth module service spec files into `src/auth/auth.service.spec.ts`, following the controller consolidation. Move every case from `auth-login.service.spec.ts`, `auth-access.service.spec.ts`, `auth-refresh.service.spec.ts`, `auth-logout.service.spec.ts` and `auth-token.service.spec.ts`, then delete those five files. Keep AuthService registration, login, stateless access, refresh and logout groups, plus a distinct AuthTokenService group containing its signing/access-verification/refresh-profile subgroups. All 104 existing expanded cases must remain covered.
+
+The scope is the auth module's service specs, including the token service. Other domains' service tests retain their ownership. Production classes, including AuthService and AuthTokenService, stay separate. The earlier controller consolidation remains part of the plan. This revision supersedes old service spec paths in the completed historical task list; follow-up task generation must account for both consolidation revisions.
+
+### Planning revision: validation exceptions folder
+
+Move `src/auth/auth-validation.ts` to `src/auth/exceptions/auth-validation.exception.ts`, colocating its exception factories with auth errors and filters. Preserve `registrationValidationException`, `authValidationException` and `logoutValidationException` exports and behavior. Update `src/configure-app.ts` to import from `./auth/exceptions/auth-validation.exception.js`, `src/auth/pipes/login-validation.pipe.ts` to import from `../exceptions/auth-validation.exception.js`, and the moved file's AuthError import to `./auth-errors.js`. Remove the old root file without a compatibility re-export once consumers are updated.
+
+This is a source-file relocation and descriptive rename only. Preserve sanitized field errors, registration-specific codes/messages, authentication 400 results, and logout's AUTHENTICATION_REQUIRED outcome for missing credentials. Keep DTO validation and pipe order intact. Prior controller/service test consolidation revisions remain in scope; no audit-logging refactor is included.
+
 ## Technical Context
 
 **Language/Version**: TypeScript ^6.0.2, strict NodeNext ESM, ES2023; observed local Node v26.8.1. Verification baseline Node 24+ supported by installed dependencies.
@@ -18,7 +36,7 @@ Extend existing AuthStrategy with authenticate() and local email/password verifi
 
 **Storage**: PostgreSQL 17 and Prisma/client ^6.19.3. One refresh_token table with user/identity ownership, SHA-256 digest, immutable family root and deadline, consumption/revocation timestamps. Preserve Prisma 6 $transaction / TransactionClient APIs.
 
-**Testing**: Vitest ^4.1.2, Supertest ^7.0.0, real PostgreSQL integration with isolated schemas via existing testDatabase helper. Inject AuthClock and pass its current epoch seconds to JwtService.verifyAsync on each call for exact token-boundary tests.
+**Testing**: One AuthController HTTP spec at `src/auth/auth.controller.spec.ts`, with endpoint-scoped fixtures and hooks, plus one auth service spec at `src/auth/auth.service.spec.ts` with subject/behavior-scoped fixtures. Existing Vitest ^4.1.2, Supertest ^7.0.0, real PostgreSQL integration with isolated schemas via existing testDatabase helper. Inject AuthClock and pass its current epoch seconds to JwtService.verifyAsync on each call for exact token-boundary tests.
 
 **Target Platform**: Existing Node HTTP service for native consumer mobile applications. Browser admin portal and role policies deferred.
 
@@ -36,11 +54,11 @@ Extend existing AuthStrategy with authenticate() and local email/password verifi
 
 | Principle | Evidence |
 |---|---|
-| Module-first boundaries | Auth owns DTOs, custom provider strategies, custom access guard, helpers, refresh persistence and colocated tests. User domain retains business data ownership. |
+| Module-first boundaries | Auth owns DTOs, validation exception factories under `src/auth/exceptions/`, custom provider strategies, custom access guard, helpers, refresh persistence and colocated tests. User domain retains business data ownership. |
 | Controller → Service → Repository | Controllers/pipes/guard handle transport; service orchestrates issuance/rotation/revocation; repository owns Prisma and parameterized row locking. |
 | NestJS and DI | Add JwtModule inside existing AuthModule; inject JwtService, strategy and configuration. APP_GUARD uses Nest DI. No UserModule → AuthModule cycle. |
 | PostgreSQL and Prisma | Add reviewed refresh-token migration and owner/root constraints; no rewriting retained users, emails, or passwords. |
-| Module-scoped verification | Auth/user units and contract/integration tests remain under their domains; only full-application E2E tests live in test/. |
+| Module-scoped verification | Auth/user units and contract/integration tests remain under their domains; only full-application E2E tests live in test/. All AuthController contracts share `src/auth/auth.controller.spec.ts`; auth module service cases share `src/auth/auth.service.spec.ts`. |
 
 JWT verification is domain infrastructure; the guard is a transport adapter. A read-only auth repository projection may read linked users to verify login/renewal eligibility, without mutating user business data. Existing registration's dependency direction is preserved.
 
@@ -68,11 +86,13 @@ Implementation tasks are tracked in [tasks.md](tasks.md); executed validation is
 ```text
 src/auth/
 ├── auth.module.ts / auth.controller.ts / auth.service.ts / auth.repository.ts
+├── auth.controller.spec.ts       # Registration, login, refresh and logout contracts
+├── auth.service.spec.ts          # All AuthService and AuthTokenService tests
 ├── auth-token.service.ts / auth-clock.ts / auth-token.config.ts
-├── auth-validation.ts
 ├── exceptions/
 │   ├── auth-errors.ts
 │   ├── auth-exception.filter.ts
+│   ├── auth-validation.exception.ts
 │   └── colocated *.spec.ts
 ├── dto/
 │   ├── login.dto.ts / login-local.dto.ts / authenticate-local.dto.ts
@@ -94,11 +114,13 @@ test/auth.e2e-spec.ts / test/user.e2e-spec.ts / test/auth-token.e2e-spec.ts
 .env.example / README.md / package.json / package-lock.json
 ```
 
-**Structure Decision**: Custom LocalStrategy owns local provider authentication and retains register()/authenticate(). AccessTokenGuard is a thin HTTP adapter calling the service; no separate JWT strategy or authentication framework is added. Other provider implementations are future work. Generic LoginDto selects provider-specific concrete DTOs; local fields are not imposed on future providers. No server-session middleware is introduced. Auth-owned error types, custom exceptions and exception filters are colocated under `src/auth/exceptions/`, including their unit/contract tests. Other domains retain their own exceptions folders; no application-wide collection of domain errors is introduced.
+**Structure Decision**: Custom LocalStrategy owns local provider authentication and retains register()/authenticate(). AccessTokenGuard is a thin HTTP adapter calling the service; no separate JWT strategy or authentication framework is added. Other provider implementations are future work. Generic LoginDto selects provider-specific concrete DTOs; local fields are not imposed on future providers. No server-session middleware is introduced. Auth-owned error types, validation exception factories, custom exceptions and exception filters are colocated under `src/auth/exceptions/`, including their unit/contract tests. Other domains retain their own exceptions folders; no application-wide collection of domain errors is introduced.
+
+The sole AuthController spec is `src/auth/auth.controller.spec.ts`; endpoint-specific controller spec files are removed after their tests are moved. All auth module service tests share `src/auth/auth.service.spec.ts`, including AuthTokenService cases grouped by subject. Other colocated test files in the tree cover guards, pipes, configuration, strategies, repositories and exceptions.
 
 ## Phase 0 — Research Decisions
 
-Completed in [research.md](research.md): provider-selected login DTO validation, custom CanActivate guard, bearer extraction, unified JwtService verification, claim/configuration checks, refresh-only family storage, row-lock races, database outage behavior, and existing filter compatibility. No unresolved clarification gates.
+Completed in [research.md](research.md): provider-selected login DTO validation, custom CanActivate guard, bearer extraction, unified JwtService verification, claim/configuration checks, refresh-only family storage, row-lock races, database outage behavior, and existing filter compatibility. Controller test consolidation and hook isolation are recorded in research decision 8; service consolidation, fixture collisions and hoisted mocks are resolved in decision 9. Validation exception factory relocation and import changes are resolved in research decision 10. No unresolved clarification gates.
 
 ## Phase 1 — Design
 
@@ -149,6 +171,26 @@ The module-owned extractBearerToken(request) helper validates raw Authorization 
 Keep independent ten-per-60-second login/refresh ThrottlerGuard buckets and existing registration behavior; skip logout and ordinary guarded routes. Existing in-memory limiter is single-instance; do not trust arbitrary forwarded-IP headers. Add documented secret configuration without values and preserve confidential production ingress.
 
 Existing registration filter converts 401 to 500; extract/generalize operation-aware auth error handling into `src/auth/exceptions/auth-exception.filter.ts` while preserving registration results. Auth domain errors live in `src/auth/exceptions/auth-errors.ts`; any custom auth exception classes also belong in this folder. Grouping files does not merge responsibilities: domain error definitions remain transport-independent, and filters map failures to HTTP responses. Services and repositories must not import filters or request/response objects. A narrowly targeted global auth filter handles guard failures on user routes without changing unrelated user errors. Extend configureApp's safe DTO errors to new auth DTOs without registration complexity on login. One request correlation reference flows through audit logging, with UTC time, operation, outcome and duration; exclude bodies, email, token/hash contents and database diagnostics.
+
+### Validation exception factory placement
+
+`src/auth/exceptions/auth-validation.exception.ts` owns the existing transport-specific factories; domain-only AuthError remains in `auth-errors.ts`. Factory functions may import Nest BadRequestException and class-validator types, while services/repositories do not depend on these HTTP factories. No Injectable provider or module registration is needed for exported functions. Keep global ValidationPipe exception selection in configureApp and concrete login DTO selection in LoginValidationPipe; moving the factories does not move validation into filters or services.
+
+Update the two known consumer imports and the moved file's relative AuthError import, preserving ESM `.js` specifiers. Search source/tests for additional consumers before deleting the old file. Use existing controller, login pipe and exception filter tests to verify safe responses and dispatch order; see [quickstart.md](quickstart.md#validation-exception-relocation-validation). Pre-research and post-design constitution gates pass: auth ownership and application layering remain unchanged, with no dependency, API, model or migration changes.
+
+### AuthController test organization
+
+Use one import block and call `useAuthTestEnvironment()` once at file scope before application startup hooks. Preserve four endpoint-specific `describe` groups, each owning its mocked AuthService, Nest application and lifecycle hooks. Keep existing endpoint-local `beforeEach` resets/default responses and `afterAll` application cleanup. Reuse imports while retaining these fixtures to avoid coupling tests through one service mock or application. Do not enable concurrent groups: current `vi.resetAllMocks()` calls affect file-wide mocks.
+
+Keep the existing ThrottlerGuard overrides in these controller contracts. Real attempt-limit coverage remains in its existing suites; moving tests must not claim new throttling coverage. Move tests intact before deleting old files, compare expanded case counts and named scenarios, and verify only one controller spec is discovered. See [quickstart.md](quickstart.md#controller-test-consolidation-validation) for baseline and post-move commands. The design requires no new dependency or test configuration change.
+
+### Auth service test organization
+
+Use one import block and separate sequential groups for AuthService behaviors and AuthTokenService. Move registration's `dto` and user (ID 1), login's user (ID 42), and the token suite's config/clock/JwtService/service/context fixtures into their owning groups. Keep each orchestration group's repository, user/strategy/token mocks, injected clock and transaction handle local. Rename ambiguous fixture identifiers only where necessary; preserve case names, parameterized inputs and all assertions.
+
+Registration's `vi.mock('argon2', ...)` is hoisted to the entire file. Preserve its mocked hashing seam; other current suites use mocked LocalStrategy or real JWT operations and do not require real Argon2. Retain registration-only Logger spies and restore hooks within that group. Do not promote registration hooks to a common parent. Existing `vi.resetAllMocks()` calls affect file-wide mocks, so do not enable concurrent groups; each group's setup must restore its own default mock behavior. Token fixtures remain independent from orchestration token mocks; retain per-test clock resets and try/finally restoration of JwtService spies.
+
+Preserve real JwtService signing/verifying in token and stateless-access cases, including strict profiles, runtime claims, exact expiry boundaries and zero persistence calls. Preserve transaction ordering, commit-before-response/revocation, safe failure classification and no-secret logging assertions in orchestration cases. Deduplicate imports, move cases before deleting files, then compare all 104 expanded cases and run focused tests, lint and build as documented in [quickstart.md](quickstart.md#service-test-consolidation-validation). No runner configuration, dependency, runtime code or migration change is needed.
 
 ### Migration and verification
 

@@ -95,3 +95,66 @@ The first increment uses a single-instance in-memory limiter; shared storage is
 required before replicas. Trust forwarded IPs only from explicitly configured
 proxies. To add a provider, implement its DTO, typed request/credential maps,
 registry entry and strategy; local is the only currently enabled provider.
+
+## Organization revision status (2026-10-29)
+
+Implemented: controller contracts share `src/auth/auth.controller.spec.ts`, all auth service cases share `src/auth/auth.service.spec.ts`, and validation factories live at `src/auth/exceptions/auth-validation.exception.ts`. Final checks passed 51 controller cases, 104 service cases and 26 login-pipe/filter cases (181 total), plus lint/build. See [executed evidence](validation.md#completed-revision-checks). Pre-move commands below are historical baseline instructions; use the destination-only commands for current validation.
+
+## Controller-test consolidation validation
+
+This revision needs installed dependencies and generated Prisma types used by application imports. It uses mocked AuthService methods and no database connection. Run from the repository root before moving tests and record the expanded test count and suite names:
+
+```bash
+npm test -- src/auth/auth.controller.spec.ts src/auth/auth-login.controller.spec.ts src/auth/auth-refresh.controller.spec.ts src/auth/auth-logout.controller.spec.ts
+```
+
+After merging all cases into `src/auth/auth.controller.spec.ts` and deleting the three endpoint-specific files:
+
+```bash
+npm test -- src/auth/auth.controller.spec.ts
+npm run lint
+npm run build
+rg --files src/auth -g '*controller.spec.ts'
+```
+
+Expected: the merged spec passes all 51 expanded cases (registration 26, login 6, refresh 9, logout 10), matching the four-file case inventory, with registration, login, refresh and logout groups preserved. The file inventory contains only `src/auth/auth.controller.spec.ts`. Preserve validation rejection before service dispatch, normalization and exact passwords, sanitized logs/errors, body-only token handling and no-store headers. Existing ThrottlerGuard overrides remain; these commands do not prove real attempt-limit behavior. Review [internal contract](contracts/auth-internal.md#controller-contract-test-ownership-2026-10-29) and [model impact](data-model.md#controller-test-consolidation-impact-2026-10-29).
+
+Record implementation results separately in `validation.md`. The consolidation is implemented and its focused checks passed; see the revision status above. Full database/E2E verification remains required for later runtime changes; the focused test-file move introduces no runtime or persistence change.
+
+## Service-test consolidation validation
+
+Use installed dependencies and generated Prisma types. These six service suites use mocked persistence and do not require a running database or HTTP listener. Before consolidation, capture the case inventory with:
+
+```bash
+npm test -- src/auth/auth.service.spec.ts src/auth/auth-login.service.spec.ts src/auth/auth-refresh.service.spec.ts src/auth/auth-logout.service.spec.ts src/auth/auth-access.service.spec.ts src/auth/auth-token.service.spec.ts
+```
+
+Executed planning baseline on 2026-10-29: six files passed, all 104 expanded tests passed. After moving all cases into `src/auth/auth.service.spec.ts` and removing the five source files, run:
+
+```bash
+npm test -- src/auth/auth.service.spec.ts
+npm run lint
+npm run build
+rg --files src/auth -g '*service.spec.ts'
+```
+
+Expected: one auth service spec file with the same 104 expanded cases passing, including the token service's three behavior subgroups. Compare named cases and parameterized inputs as well as totals. Preserve registration's Argon2 mock and Logger cleanup, isolated user fixtures, sequential groups with local mock initialization, real JWT verification, injected clock resets, transaction commit guarantees and no-persistence access assertions. No service spec in another domain is moved. See [internal contract](contracts/auth-internal.md#service-contract-test-ownership-2026-10-29) and [model impact](data-model.md#service-test-consolidation-impact-2026-10-29).
+
+Post-merge results are recorded in `validation.md`, separately from the passing pre-move baseline. Validate controller consolidation separately using the preceding guide.
+
+## Validation exception relocation validation
+
+Use the existing installed dependencies and generated Prisma types. After moving `src/auth/auth-validation.ts` to `src/auth/exceptions/auth-validation.exception.ts` and updating imports, run from the repository root:
+
+```bash
+npm test -- src/auth/auth.controller.spec.ts src/auth/pipes/login-validation.pipe.spec.ts src/auth/exceptions/auth-exception.filter.spec.ts
+npm run lint
+npm run build
+rg -n 'auth-validation' src test
+```
+
+Run these commands after the planned controller consolidation; if the relocation is implemented first, also include the existing login, refresh and logout controller spec files in the focused test command. Controller tests need an environment that permits Supertest's localhost listener; these suites mock persistence and need no database connection.
+
+Expected: all affected existing cases pass, consumers reference `auth-validation.exception.js` under exceptions, and `src/auth/auth-validation.ts` no longer exists. Verify registration-specific field codes/messages, generic sanitized auth validation errors, unsupported provider/extra-field rejection before service calls, and logout's missing/empty credential 401 versus malformed-field 400. Response bodies must not echo secrets. No additional test suite is required solely for this file move. See [factory contract](contracts/auth-internal.md#validation-exception-factories-2026-10-29).
+
+The source relocation is implemented and its affected tests, lint and build passed. Record eventual results in `validation.md`.
